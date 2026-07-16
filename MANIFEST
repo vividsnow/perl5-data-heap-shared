@@ -38,6 +38,7 @@ xt/fd_validation.t
 xt/fuzz_header.t
 xt/hostile_bless.t
 xt/invalid_args.t
+xt/kwalitee.t
 xt/manifest_vs_git.t
 xt/map_shared_proof.t
 xt/memfd_seal.t

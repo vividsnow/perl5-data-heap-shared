@@ -9,7 +9,8 @@
     if (!sv_isobject(sv) || !sv_derived_from(sv, "Data::Heap::Shared")) \
         croak("Expected a Data::Heap::Shared object"); \
     HeapHandle *h = INT2PTR(HeapHandle*, SvIV(SvRV(sv))); \
-    if (!h) croak("Attempted to use a destroyed Data::Heap::Shared object")
+    if (!h) croak("Attempted to use a destroyed Data::Heap::Shared object"); \
+    sv_2mortal(SvREFCNT_inc(SvRV(sv)))
 
 #define MAKE_OBJ(class, handle) \
     SV *obj = newSViv(PTR2IV(handle)); \
@@ -29,8 +30,8 @@ new(class, path, capacity, ...)
   PREINIT:
     char errbuf[HEAP_ERR_BUFLEN];
   CODE:
-    const char *p = (SvGETMAGIC(path), SvOK(path)) ? SvPV_nolen(path) : NULL;
     mode_t mode = (items > 3 && (SvGETMAGIC(ST(3)), SvOK(ST(3)))) ? (mode_t)SvUV(ST(3)) : 0600;
+    const char *p = (SvGETMAGIC(path), SvOK(path)) ? SvPV_nolen(path) : NULL;
     HeapHandle *h = heap_create(p, capacity, mode, errbuf);
     if (!h) croak("Data::Heap::Shared->new: %s", errbuf);
     MAKE_OBJ(class, h);
@@ -106,7 +107,7 @@ pop_wait(self, ...)
     EXTRACT_HEAP(self);
     double timeout = -1;
   PPCODE:
-    if (items > 1) timeout = SvNV(ST(1));
+    if (items > 1 && (SvGETMAGIC(ST(1)), SvOK(ST(1)))) timeout = SvNV(ST(1));
     int64_t p, v;
     if (heap_pop_wait(h, &p, &v, timeout)) {
         EXTEND(SP, 2);
@@ -260,7 +261,7 @@ unlink(self_or_class, ...)
     SV *self_or_class
   CODE:
     const char *p;
-    if (sv_isobject(self_or_class)) {
+    if (sv_isobject(self_or_class) && sv_derived_from(self_or_class, "Data::Heap::Shared")) {
         HeapHandle *h = INT2PTR(HeapHandle*, SvIV(SvRV(self_or_class)));
         if (!h) croak("Attempted to use a destroyed object");
         p = h->path;
