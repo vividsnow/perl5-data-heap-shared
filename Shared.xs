@@ -12,6 +12,19 @@
     if (!h) croak("Attempted to use a destroyed Data::Heap::Shared object"); \
     sv_2mortal(SvREFCNT_inc(SvRV(sv)))
 
+/* Re-read the handle after a call that can run Perl code (tied/overloaded
+ * argument magic).  EXTRACT_HEAP's sv_2mortal(SvREFCNT_inc(...)) pin only
+ * blocks REFCOUNT-driven destruction; an explicit $obj->DESTROY frees the
+ * handle regardless and zeroes the IV, so the local `h` would dangle.
+ * That same Perl can also REPLACE the invocant ($obj = 42 mutates ST(0),
+ * because Perl passes aliases), which is why SvROK is re-checked before
+ * SvRV -- otherwise SvRV would run on a non-reference. */
+#define REEXTRACT_HEAP(sv) \
+    if (!SvROK(sv)) \
+        croak("Data::Heap::Shared object was replaced during the call"); \
+    h = INT2PTR(HeapHandle*, SvIV(SvRV(sv))); \
+    if (!h) croak("Data::Heap::Shared object destroyed during the call")
+
 #define MAKE_OBJ(class, handle) \
     SV *obj = newSViv(PTR2IV(handle)); \
     SV *ref = newRV_noinc(obj); \
@@ -108,6 +121,7 @@ pop_wait(self, ...)
     double timeout = -1;
   PPCODE:
     if (items > 1 && (SvGETMAGIC(ST(1)), SvOK(ST(1)))) timeout = SvNV(ST(1));
+    REEXTRACT_HEAP(self);   /* the timeout's get-magic may have destroyed self */
     int64_t p, v;
     if (heap_pop_wait(h, &p, &v, timeout)) {
         EXTEND(SP, 2);
